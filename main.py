@@ -1,28 +1,22 @@
 from telegram.ext import Updater, MessageHandler, Filters
-import trading_ig
 import requests
 import os
 
 
 def run():
     """
-
+    Setup:
     Copy function body into AWS lambda and set required enviroment vars.
 
     Event flow:
+    1. Signal received from TradingView alert webhook.
+    2. Raise orders
 
-    1. Target timeframe bar close occurs.
-    2. Fetch n required historic bars.
-    3. Evaluate price data and generate trade signal if appropriate.
-    4. If signal generated, send telegram notification and raise orders.
     """
 
-    # Lookback period.
-    N_REQUIRED_BARS = 100
-
-    # Container for bars and indicator values.
-    bars = {}
-
+    """
+    START AUTH TOKENS
+    """
     if os.environ['IG_API_KEY'] and os.environ['IG_API_SECRET']:
         IG_API_KEY = os.environ['IG_API_KEY']
         IG_API_SECRET = os.environ['IG_API_SECRET']
@@ -33,15 +27,14 @@ def run():
         TELEGRAM_BOT_TOKEN = os.environ['TELEGRAM_BOT_TOKEN']
     else:
         raise Exception("Telegram auth token missing.")
+    """
+    END AUTH TOKENS
+    """
 
-    # Get n required previous bars.
-    # TODO
+    """
+    START IG API CLIENT
+    """
 
-    # Calculate indicators.
-    # TODO
-
-    # Run strategy logic.
-    # TODO
-
-    # If signal generated, notify user via telegram and place orders.
-    # TODO
+    """
+    END IG API CLIENT
+    """
