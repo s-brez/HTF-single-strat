@@ -15,13 +15,13 @@ def run(tradingview_webhook_signal):
 
     """
 
-    # START AUTH TOKENS
+    # START LOAD AUTH TOKENS
     if os.environ['IG_API_KEY'] and os.environ['IG_API_SECRET']:
         IG_API_KEY = os.environ['IG_API_KEY']
         IG_API_SECRET = os.environ['IG_API_SECRET']
     else:
         raise Exception("IG Markets API keys missing.")
-    # END AUTH TOKENS
+    # END LOAD AUTH TOKENS
 
     # START IG API CLIENT
     # Instantiate an IG Markets python client, using the keys loaded above.
