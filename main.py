@@ -25,18 +25,23 @@ def run(tradingview_webhook_signal):
 
     # START IG API CLIENT
     # Instantiate an IG Markets python client, using the keys loaded above.
+    ig_client = None
     # END IG API CLIENT
 
     # START PARSE WEBHOOK SIGNAL
     # Add logic to parse incoming webhook signal here.
+    parsed_signal = None
     # END PARSE WEBHOOK SIGNAL
 
     # START ORDER SIZING & SUBMISSION
-    # Add logic here to prepare your prders to be sent to IG.
+    # Add logic here to prepare prders to be sent to IG.
+    orders_to_send = None
     # Send prepared prders to IG with their provided client methods.
+    order_confirmations = None
     # END ORDER SIZING & SUBMISSION
 
     # START SEND USER NOTIFICATION (OPTIONAL)
     # Add messaging client logic here (e.g Telegram or email) to notify user
     # of signals/trades taken.
+    telegram_client = None
     # END SEND USER NOTIFICATION
