@@ -1,8 +1,9 @@
 import requests
+import json
 import os
 
 
-def run(tradingview_webhook_signal):
+def lambda_handler(tradingview_webhook_signal):
     """
     Setup:
     Copy run() function body into AWS lambda and set required enviroment vars.
