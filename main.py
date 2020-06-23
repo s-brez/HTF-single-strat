@@ -11,69 +11,94 @@ def lambda_handler(event, context):
 
     Event flow:
     1. Signal received from TradingView alert webhook.
-    2. Load relevant auth tokens from environment variables.
-    3. Parse incoming signal and calculate entry/stop/TP order size.
-    4. Raise orders with venue.
+    2. Check signal token is valid, otherwise do nothing further.
+    3. Load relevant auth tokens from environment variables.
+    4. Parse incoming signal and calculate entry/stop/TP order size.
+    5. Raise orders with venue.
 
     """
 
-    # Set true for live trading.
     LIVE = False
 
-    # Load auth tokens from environment variables.
-    if LIVE:
-        if(  # Live.
-            os.environ['IG_API_KEY'] and os.environ['IG_USERNAME'] and
-                os.environ['IG_PASSWORD']):
-            IG_API_KEY = os.environ['IG_API_KEY']
-            IG_USERNAME = os.environ['IG_USERNAME']
-            IG_PASSWORD = os.environ['IG_PASSWORD']
-            IG_URL = "https://api.ig.com/gateway/deal/session"
-        else:
-            return {
-                'statusCode': 400,
-                'body': json.dumps(
-                    "IG Markets live authentication tokens missing")}
+    # Load webhook token. Incoming signals must match token to be actioned.
+    if os.environ['WEBHOOK_TOKEN']:
+        WEBHOOK_TOKEN = os.environ['WEBHOOK_TOKEN']
     else:
-        if(  # Demo.
-            os.environ['IG_API_KEY_DEMO'] and os.environ['IG_USERNAME_DEMO'] and
-                os.environ['IG_PASSWORD_DEMO']):
-            IG_API_KEY = os.environ['IG_API_KEY_DEMO']
-            IG_USERNAME = os.environ['IG_USERNAME_DEMO']
-            IG_PASSWORD = os.environ['IG_PASSWORD_DEMO']
-            IG_URL = "https://demo-api.ig.com/gateway/deal/session"
+        print("Error: Tradingview webhook token missing")
+        return {
+            'statusCode': 400,
+            'body': json.dumps("Tradingview webhook token missing")}
+
+    # Parse incoming webhook signal.
+    webhook_signal = json.loads(event['body'])
+
+    # Action the signal if token matches.
+    if webhook_signal['token'] == WEBHOOK_TOKEN:
+        print("Actioning webhook signal")
+
+        # Load auth tokens from environment variables.
+        if LIVE:
+            if(  # Live.
+                os.environ['IG_API_KEY'] and os.environ['IG_USERNAME'] and
+                    os.environ['IG_PASSWORD']):
+                IG_API_KEY = os.environ['IG_API_KEY']
+                IG_USERNAME = os.environ['IG_USERNAME']
+                IG_PASSWORD = os.environ['IG_PASSWORD']
+                IG_URL = "https://api.ig.com/gateway/deal/session"
+            else:
+                print("Error: IG Markets live authentication tokens missing")
+                return {
+                    'statusCode': 400,
+                    'body': json.dumps(
+                        "IG Markets live authentication tokens missing")}
         else:
-            return {
-                'statusCode': 400,
-                'body': json.dumps(
-                    "IG Markets demo authentication tokens missing")}
+            if(  # Demo.
+                os.environ['IG_API_KEY_DEMO'] and os.environ['IG_USERNAME_DEMO'] and
+                    os.environ['IG_PASSWORD_DEMO']):
+                IG_API_KEY = os.environ['IG_API_KEY_DEMO']
+                IG_USERNAME = os.environ['IG_USERNAME_DEMO']
+                IG_PASSWORD = os.environ['IG_PASSWORD_DEMO']
+                IG_URL = "https://demo-api.ig.com/gateway/deal/session"
+            else:
+                print("Error: IG Markets demo authentication tokens missing")
+                return {
+                    'statusCode': 400,
+                    'body': json.dumps(
+                        "IG Markets demo authentication tokens missing")}
 
-    # Prepare request for IG.
-    headers = {
-        'X-IG-API-KEY': IG_API_KEY,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json; charset=UTF-8'}
+        # Open new session with IG.
+        headers = {
+            'X-IG-API-KEY': IG_API_KEY,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json; charset=UTF-8'}
 
-    body = {
-        "identifier": IG_USERNAME,
-        "password": IG_PASSWORD}
+        body = {
+            "identifier": IG_USERNAME,
+            "password": IG_PASSWORD}
 
-    # Open new session with IG.
-    request = Request('POST', IG_URL, json=body,
-                      headers=headers, params='').prepare()
+        response = Session().send(
+            Request('POST', IG_URL, json=body, headers=headers,
+                    params='').prepare())
 
-    response = Session().send(request)
+        # CST and X-SECURITY-TOKEN must be included in subsequent requests.
+        CST, XST = response.headers['CST'], response.headers['X-SECURITY-TOKEN']
 
-    print(response)
+        print(response)
 
-    # Parse the incoming webhook json.
-    tradingview_webhook_signal = json.loads(event['body'])
+        # START ORDER SIZING & SUBMISSION
+        # Add logic here to prepare prders to be sent to IG.
+        orders_to_send = None
+        # Send prepared prders to IG with provided client methods.
+        order_confirmations = None
 
-    # START ORDER SIZING & SUBMISSION
-    # Add logic here to prepare prders to be sent to IG.
-    orders_to_send = None
-    # Send prepared prders to IG with provided client methods.
-    order_confirmations = None
+    else:
+        print("Webhook signal token error")
+        return {
+            'statusCode': 400,
+            'body': json.dumps("Webhook signal token error")}
 
 
-lambda_handler({"body": '{"text": "Test"}'}, None)
+event = {"body": '{"text": "Test", "token": "7f3c4d9a-9ac3-4819-b997-b8ee294d5a42"}'}
+# {"ticker": {{ticker}}, "exchange": {{exchange}}, "open": {{open}},  "close": {{close}}, "high": {{high}}, "low": {{low}}, "volume": {{volume}}, "time": {{time}}}
+
+lambda_handler(event, context=None)
