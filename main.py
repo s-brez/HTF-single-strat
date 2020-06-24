@@ -67,6 +67,8 @@ def lambda_handler(event, context):
                         "IG Markets demo authentication tokens missing")}
 
         # Create a session with IG.
+        s = Session()
+
         headers = {
             'X-IG-API-KEY': IG_API_KEY,
             'Content-Type': 'application/json',
@@ -76,7 +78,7 @@ def lambda_handler(event, context):
             "identifier": IG_USERNAME,
             "password": IG_PASSWORD}
 
-        response = Session().send(
+        response = s.send(
             Request('POST', IG_URL + "/session", json=body, headers=headers,
                     params='').prepare())
 
@@ -91,34 +93,37 @@ def lambda_handler(event, context):
             'X-SECURITY-TOKEN': XST,
             'CST': CST}
 
-        brent_epic, brent_expiry, brent_lotsize = None, None, None
-        dax_epic, dax_expiry, dax_lotsize = None, None, None
-        wheat_epic, wheat_expiry, wheat_lotsize = None, None, None
+        # ticker_code: (instrument name, search term, instrument class)
+        ticker_map = {
+            "UKOIL": ("Oil - Brent Crude", "brent", "COMMODITIES"),
+            "CFDs on Brent Crude Oil": ("Oil - Brent Crude", "brent", "COMMODITIES"),
+            "DE30EUR": ("Germany 30 Cash", "dax", "INDICES"),
+            "DAX": ("Germany 30 Cash", "dax", "INDICES"),
+            "WHTUSD": ("Chicago Wheat", "chicago%20wheat", "COMMODITIES"),
+            "WHEATUSD": ("Chicago Wheat", "chicago%20wheat", "COMMODITIES")}
 
-        # Fetch instrument details only if webhook signal has an appropriate ticker code.
-        if webhook_signal['ticker'] == "UKOIL" or webhook_signal['ticker'] == "CFDs on Brent Crude Oil":
-            brent_markets = Session().send(Request('GET', IG_URL + "/markets?searchTerm=brent", headers=headers, params='').prepare())
-            for market in brent_markets.json()['markets']:
-                if market['expiry'] != "DFB" and market['instrumentName'][:17] == "Oil - Brent Crude" and market['instrumentType'] == "COMMODITIES":
-                    brent_epic, brent_expiry = market["epic"], market["expiry"]
-                    break
-            brent_lotsize = Session().send(Request('GET', IG_URL + "/markets/" + brent_epic, headers=headers, params='').prepare()).json()['instrument']['lotSize']
+        name, search, iclass, idetails, epic, expiry, psize, minsize, currencies, unit = None, None, None, None, None, None, None, None, None, None
 
-        elif webhook_signal['ticker'] == "DE30EUR" or webhook_signal['ticker'] == "DAX":
-            dax_markets = Session().send(Request('GET', IG_URL + "/markets?searchTerm=dax", headers=headers, params='').prepare())
-            for market in dax_markets.json()['markets']:
-                if market['expiry'] != "DFB" and market['instrumentName'][:10] == "Germany 30" and market['instrumentType'] == "INDICES":
-                    dax_epic, dax_expiry = market["epic"], market["expiry"]
-                    break
-            dax_lotsize = Session().send(Request('GET', IG_URL + "/markets/" + dax_epic, headers=headers, params='').prepare()).json()['instrument']['lotSize']
+        # Action the signal only if the ticker code is known.
+        if webhook_signal['ticker'].upper() in ticker_map.keys():
 
-        elif webhook_signal['ticker'] == "WHEATUSD" or webhook_signal['ticker'] == "WHTUSD":
-            wheat_markets = Session().send(Request('GET', IG_URL + "/markets?searchTerm=chicago%20wheat", headers=headers, params='').prepare())
-            for market in wheat_markets.json()['markets']:
-                if market['expiry'] != "DFB" and market['instrumentName'][:13] == "Chicago Wheat" and market['instrumentType'] == "COMMODITIES":
-                    wheat_epic, wheat_expiry = market["epic"], market["expiry"]
+            name = ticker_map[webhook_signal['ticker'].upper()][0]
+            search = ticker_map[webhook_signal['ticker'].upper()][1]
+            iclass = ticker_map[webhook_signal['ticker'].upper()][2]
+
+            # Find the appropriate instrument to match the given webhook ticker code.
+            markets = s.send(Request('GET', IG_URL + "/markets?searchTerm=" + search, headers=headers, params='').prepare())
+            for market in markets.json()['markets']:
+                if market['expiry'] != "DFB" and market['instrumentName'][:len(name)] == name and market['instrumentType'] == iclass:
+                    epic, expiry = market["epic"], market["expiry"]
                     break
-            wheat_lotsize = Session().send(Request('GET', IG_URL + "/markets/" + wheat_epic, headers=headers, params='').prepare()).json()['instrument']['lotSize']
+
+            # Fetch remaining instrument info.
+            idetails = s.send(Request('GET', IG_URL + "/markets/" + epic, headers=headers, params='').prepare()).json()
+            psize = idetails['instrument']['lotSize']
+            currencies = [c['name'] for c in idetails['instrument']['currencies']]
+            minsize = idetails['dealingRules']['minDealSize']['value']
+            unit = idetails['dealingRules']['minDealSize']['unit']
 
         else:
             print("Error: Webhook ticker code not recognised.")
@@ -126,20 +131,12 @@ def lambda_handler(event, context):
                 'statusCode': 400,
                 'body': json.dumps("Webhook ticker code not recognised.")}
 
-        # Ticker code: EPIC code mapping.
-        ticker_epic_map = {
-            "UKOIL": brent_epic,
-            "CFDs on Brent Crude Oil": brent_epic,
-            "DE30EUR": dax_epic,
-            "DAX": dax_epic,
-            "WHTUSD": wheat_epic,
-            "WHEATUSD": wheat_epic}
+        print(webhook_signal['ticker'].upper(), name, "Expiry:", expiry, psize,
+              currencies, "Min. deal size:", minsize, "Deal unit:", unit)
 
-        print("Brent", ticker_epic_map['UKOIL'], brent_expiry, brent_lotsize)
-        print("DAX", ticker_epic_map['DAX'], dax_expiry, dax_lotsize)
-        print("Chicago Wheat", ticker_epic_map['WHEATUSD'], wheat_expiry, wheat_lotsize)
+        print(json.dumps(idetails['snapshot'], indent=2))
 
-        # Place entry, then place stop and take profit orders  using the returned entry price.
+        # Place entry, stop and take profit orders.
 
     else:
         print("Webhook signal token error")
