@@ -1,7 +1,9 @@
 from requests.packages.urllib3.util.retry import Retry
+from requests.adapters import HTTPAdapter
 from requests import Request, Session
 from datetime import datetime
 import json
+import sys
 import os
 
 
@@ -29,8 +31,8 @@ def lambda_handler(event, context):
         "CFDs on Brent Crude Oil": ("Oil - Brent Crude", "brent", "COMMODITIES", 1, 1, 1),
         "DE30EUR": ("Germany 30 Cash", "dax", "INDICES", 1, 1, 1),
         "DAX": ("Germany 30 Cash", "dax", "INDICES", 1, 1, 1),
-        "WHTUSD": ("Chicago Wheat", "chicago%20wheat", "COMMODITIES", 1, 1, 1),
-        "WHEATUSD": ("Chicago Wheat", "chicago%20wheat", "COMMODITIES", 1, 1, 1)}
+        "WHTUSD": ("Chicago Wheat", "chicago%20wheat", "COMMODITIES", 0, 0, 1),
+        "WHEATUSD": ("Chicago Wheat", "chicago%20wheat", "COMMODITIES", 0, 0, 1)}
 
     # Load webhook token. Incoming signals must match token to be actioned.
     if os.environ['WEBHOOK_TOKEN']:
@@ -95,8 +97,7 @@ def lambda_handler(event, context):
             "identifier": IG_USERNAME,
             "password": IG_PASSWORD}
 
-        response = s.send(
-            Request('POST', IG_URL + "/session", json=body, headers=headers,
+        response = s.send( Request('POST', IG_URL + "/session", json=body, headers=headers,
                     params='').prepare())
 
         # CST and X-SECURITY-TOKEN must be included in subsequent requests.
@@ -110,7 +111,7 @@ def lambda_handler(event, context):
             'X-SECURITY-TOKEN': XST,
             'CST': CST}
 
-        name, search, iclass, idetails, epic, expiry, psize, minsize, currencies, unit = None, None, None, None, None, None, None, None, None, None
+        position, name, search, iclass, idetails, epic, expiry, psize, minsize, currencies, unit = None, None, None, None, None, None, None, None, None, None, None
 
         # Action the signal only if the ticker code is known.
         if webhook_signal['ticker'].upper() in TICKER_MAP.keys():
@@ -118,16 +119,34 @@ def lambda_handler(event, context):
             name = TICKER_MAP[webhook_signal['ticker'].upper()][0]
             search = TICKER_MAP[webhook_signal['ticker'].upper()][1]
             iclass = TICKER_MAP[webhook_signal['ticker'].upper()][2]
-            stop_level = TICKER_MAP[webhook_signal['ticker']][3]
-            tp_level = TICKER_MAP[webhook_signal['ticker']][4]
+            stop_pips = TICKER_MAP[webhook_signal['ticker']][3] if TICKER_MAP[webhook_signal['ticker']][3] else None
+            tp_pips = TICKER_MAP[webhook_signal['ticker']][4] if TICKER_MAP[webhook_signal['ticker']][4] else None
             size_multi = TICKER_MAP[webhook_signal['ticker']][5]
 
-            # Find the appropriate instrument to match the given webhook ticker code.
-            markets = s.send(Request('GET', IG_URL + "/markets?searchTerm=" + search, headers=headers, params='').prepare())
-            for market in markets.json()['markets']:
-                if market['expiry'] != "DFB" and market['instrumentName'][:len(name)] == name and market['instrumentType'] == iclass:
-                    epic, expiry = market["epic"], market["expiry"]
-                    break
+            # Check for open positions.
+            existing_positions = s.send(Request('GET', IG_URL + "/positions", headers=headers, params='').prepare()).json()
+
+            # If open position exists matching ticker code, use that EPIC and expiry.
+            if len(existing_positions['positions']) > 0:
+                for pos in existing_positions['positions']:
+                    if name in pos['market']['instrumentName'][:len(name)]:
+                        print("Open position exists for " + name + ".")
+                        print(json.dumps(pos, indent=2))
+                        epic = pos['market']["epic"]
+                        expiry = pos['market']["expiry"]
+
+                        # Store the open position data.
+                        position = pos
+                        sys.exit(0)
+
+            # Otherwise identify appropriate instrument.
+            else:
+                # Find the appropriate instrument to match the given webhook ticker code.
+                markets = s.send(Request('GET', IG_URL + "/markets?searchTerm=" + search, headers=headers, params='').prepare())
+                for market in markets.json()['markets']:
+                    if market['expiry'] != "DFB" and market['instrumentName'][:len(name)] == name and market['instrumentType'] == iclass:
+                        epic, expiry = market["epic"], market["expiry"]
+                        break
 
             # Fetch remaining instrument info.
             idetails = s.send(Request('GET', IG_URL + "/markets/" + epic, headers=headers, params='').prepare()).json()
@@ -144,19 +163,33 @@ def lambda_handler(event, context):
 
         side = webhook_signal['side'].upper()
 
+        # Now that we have the instrument, and the status of any open positions,
+        # handle actions per ticker.
+
         # For new trades:
         # Use best current bid and offer to calculate stop and tp level price.
+
+        # Percentage based:
+        # if side == "BUY" or side == "SELL":
+        #     if side == "BUY":
+        #         stop = (idetails['snapshot']['bid'] / 100) * (100 - stop_level)
+        #         tp = (idetails['snapshot']['offer'] / 100) * (100 + tp_level)
+        #     elif side == "SELL":
+        #         stop = (idetails['snapshot']['offer'] / 100) * (100 + tp_level)
+        #         tp = (idetails['snapshot']['bid'] / 100) * (100 - stop_level)
+
+        # Pip based:
         if side == "BUY" or side == "SELL":
             if side == "BUY":
-                stop = (idetails['snapshot']['bid'] / 100) * (100 - stop_level)
-                tp = (idetails['snapshot']['offer'] / 100) * (100 + tp_level)
+                stop = int(idetails['snapshot']['bid'] - stop_pips) if stop_pips else None
+                tp = int(idetails['snapshot']['offer'] + tp_pips) if tp_pips else None
             elif side == "SELL":
-                stop = (idetails['snapshot']['offer'] / 100) * (100 + tp_level)
-                tp = (idetails['snapshot']['bid'] / 100) * (100 - stop_level)
+                stop = int(idetails['snapshot']['offer'] + tp_pips) if tp_pips else None
+                tp = int(idetails['snapshot']['bid'] - stop_pips) if stop_pips else None
 
             position_size = size_multi * minsize
 
-            # Specify order details.
+            # Specify position details.
             order = {
                 "epic": epic,
                 "expiry": expiry,
@@ -166,12 +199,12 @@ def lambda_handler(event, context):
                 # "timeInForce": None,
                 "level": None,
                 "guaranteedStop": False,
-                "stopLevel": int(stop),
+                "stopLevel": stop,
                 "stopDistance": None,
                 # "trailingStop": False,
                 # "trailingStopIncrement": None,
                 "forceOpen": "true",
-                "limitLevel": int(tp),
+                "limitLevel": tp,
                 "limitDistance": None,
                 "quoteId": None,
                 "currencyCode": currencies[0]
@@ -180,12 +213,14 @@ def lambda_handler(event, context):
             print(webhook_signal['ticker'].upper(), name, "Expiry:", expiry, psize,
                   currencies, "Min. deal size:", minsize, "Deal unit:", unit)
 
-            # Open a position.
-            print(json.dumps(order, indent=2))
+            # Attempt to open a position.
             r = s.send(Request('POST', IG_URL + "/positions/otc", headers=headers, json=order, params='').prepare())
+            pos_r = r.json()
 
             if r.status_code == 200:
-                success_msg = "Orders placed. Deal ref#: " + r.json()['dealReference']
+                # Check if a new position was opened.
+
+                success_msg = "Deal ref#: " + pos_r['dealReference']
                 return {
                     'statusCode': 200,
                     'body': json.dumps(success_msg)}
@@ -223,8 +258,8 @@ event = {"body": '{"ticker": "WHEATUSD", "exchange": "TVC", "side": "sell", "ope
 # {"ticker": {{ticker}}, "exchange": {{exchange}}, "open": {{open}},  "close": {{close}}, "high": {{high}}, "low": {{low}}, "volume": {{volume}}, "time": {{time}}, "text": "", "token": "7f3c4d9a-9ac3-4819-b997-b8ee294d5a42"}
 
 
-print(json.dumps(event, indent=2))
-# print(lambda_handler(event, context=None))
+# print(json.dumps(event, indent=2))
+print(lambda_handler(event, context=None))
 
 
 # UKOIL - 210m
