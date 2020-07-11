@@ -143,7 +143,7 @@ def lambda_handler(event, context):
 
             # Otherwise identify appropriate instrument.
             else:
-                # Find the appropriate instrument to match the given webhook ticker code.
+                # Find appropriate instrument to match given webhook ticker code.
                 markets = s.send(Request('GET', IG_URL + "/markets?searchTerm=" + search, headers=headers, params='').prepare())
                 for market in markets.json()['markets']:
                     if market['expiry'] != "DFB" and market['instrumentName'][:len(name)] == name and market['instrumentType'] == iclass:
@@ -195,11 +195,15 @@ def lambda_handler(event, context):
 
                     # Handle error cases.
                     if conf['dealStatus'] == "REJECTED":
-                        if conf['reason'] == "MARKET_OFFLINE":
+                        if conf['reason'] == "MARKET_OFFLINE" or conf['reason'] == "MARKET_CLOSED_WITH_EDITS":
                             print("Market offline.")
                             return {
                                 'statusCode': 400,
                                 'body': json.dumps("Market offline.")}
+                        else:
+                            return {
+                                'statusCode': 400,
+                                'body': json.dumps(conf)}
 
                 else:
                     print("Position closure failure.")
@@ -239,12 +243,15 @@ def lambda_handler(event, context):
 
                 # Handle error cases.
                 if conf['dealStatus'] == "REJECTED":
-                    if conf['reason'] == "MARKET_OFFLINE":
+                    if conf['reason'] == "MARKET_OFFLINE" or conf['reason'] == "MARKET_CLOSED_WITH_EDITS":
                         print("Market offline.")
                         return {
                             'statusCode': 400,
                             'body': json.dumps("Market offline.")}
-
+                    else:
+                        return {
+                            'statusCode': 400,
+                            'body': json.dumps(conf)}
             else:
                 print("Order placement failure.")
                 return {
@@ -295,11 +302,15 @@ def lambda_handler(event, context):
 
                     # Handle error cases.
                     if conf['dealStatus'] == "REJECTED":
-                        if conf['reason'] == "MARKET_OFFLINE":
+                        if conf['reason'] == "MARKET_OFFLINE" or conf['reason'] == "MARKET_CLOSED_WITH_EDITS":
                             print("Market offline.")
                             return {
                                 'statusCode': 400,
                                 'body': json.dumps("Market offline.")}
+                        else:
+                            return {
+                                'statusCode': 400,
+                                'body': json.dumps(conf)}
 
             # Close the existing long or short.
             elif side == "CLOSE_BUY" or side == "CLOSE_SELL":
@@ -329,19 +340,20 @@ def lambda_handler(event, context):
 
                         # Handle error cases.
                         if conf['dealStatus'] == "REJECTED":
-                            if conf['reason'] == "MARKET_OFFLINE":
+                            if conf['reason'] == "MARKET_OFFLINE" or conf['reason'] == "MARKET_CLOSED_WITH_EDITS":
                                 print("Market offline.")
                                 return {
                                     'statusCode': 400,
                                     'body': json.dumps("Market offline.")}
+                            else:
+                                return {
+                                    'statusCode': 400,
+                                    'body': json.dumps(conf)}
                 else:
                     print("No existing position.")
                     return {
                         'statusCode': 400,
                         'body': json.dumps("No existing position.")}
-
-
-
 
             else:
                 print("Webhook signal side error")
@@ -351,18 +363,72 @@ def lambda_handler(event, context):
 
         elif name == "Oil - Brent Crude":
 
-            sl, tp = 150, 35
+            sl_pips, tp_pips = 150, 35
+
             # Open positon with linked sl and tp using best bid and offer, then
             # get confirmed entry level and adjust sl and tp to new values.
+            if side == "BUY":
+                stop = idetails['snapshot']['bid'] - sl_pips
+                tp = idetails['snapshot']['offer'] + tp_pips
+            elif side == "SELL":
+                stop = idetails['snapshot']['offer'] + tp_pips
+                tp = idetails['snapshot']['bid'] - sl_pips
+            else:
+                print("Webhook signal side error")
+                return {
+                    'statusCode': 400,
+                    'body': json.dumps("Webhook signal side error")}
+
+            # Prepare new position order.
+            order = {
+                "epic": epic,
+                "expiry": expiry,
+                "direction": side,
+                "size": position_size,
+                "orderType": "MARKET",
+                # "timeInForce": None,
+                "level": None,
+                "guaranteedStop": False,
+                "stopLevel": stop,
+                "stopDistance": None,
+                # "trailingStop": False,
+                # "trailingStopIncrement": None,
+                "forceOpen": True,
+                "limitLevel": tp,
+                "limitDistance": None,
+                "quoteId": None,
+                "currencyCode": currencies[0]
+            }
+
+            # Attempt to open a new position.
+            r = s.send(Request('POST', IG_URL + "/positions/otc", headers=headers, json=order, params='').prepare())
+            ref = r.json()
+            if r.status_code == 200:
+
+                # Check if new position was opened.
+                c = s.send(Request('GET', IG_URL + "/confirms/" + ref['dealReference'], headers=headers, params='').prepare())
+                conf = c.json()
+
+                # Handle error cases.
+                if conf['dealStatus'] == "REJECTED":
+                    if conf['reason'] == "MARKET_OFFLINE" or conf['reason'] == "MARKET_CLOSED_WITH_EDITS":
+                        print("Market offline.")
+                        return {
+                            'statusCode': 400,
+                            'body': json.dumps("Market offline.")}
+                    else:
+                        return {
+                            'statusCode': 400,
+                            'body': json.dumps(conf)}
+
+                # TODO
+                # Adjust tp and stop to be fixed pips from entry.
 
         else:
-            print("Error: Instrument not recognised.")
+            print("Error: Instrument name not recognised.")
             return {
                 'statusCode': 400,
                 'body': json.dumps("Instrument name not recognised.")}
-
-        # print(webhook_signal['ticker'].upper(), name, "Expiry:", expiry, psize,
-        #       currencies, "Min. deal size:", minsize, "Deal unit:", unit)
 
     else:
         print("Webhook signal token error")
@@ -371,7 +437,7 @@ def lambda_handler(event, context):
             'body': json.dumps("Webhook signal token error")}
 
 
-event = {"body": '{"ticker": "DAX", "exchange": "TVC", "side": "close_sell", "open": 42.42, "close": 42.57, "high": 42.68, "low": 42.34, "volume": 806, "time": "2019-08-27T09:56:00Z", "text": "", "token": "7f3c4d9a-9ac3-4819-b997-b8ee294d5a42"}'}
+event = {"body": '{"ticker": "UKOIL", "exchange": "TVC", "side": "sell", "open": 42.42, "close": 42.57, "high": 42.68, "low": 42.34, "volume": 806, "time": "2019-08-27T09:56:00Z", "text": "", "token": "7f3c4d9a-9ac3-4819-b997-b8ee294d5a42"}'}
 
 
 # Paste into webhook:
