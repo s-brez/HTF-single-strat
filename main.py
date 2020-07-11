@@ -2,6 +2,7 @@ from requests.packages.urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
 from requests import Request, Session
 from datetime import datetime
+from time import sleep
 import json
 import sys
 import os
@@ -27,12 +28,12 @@ def lambda_handler(event, context):
 
     # ticker_code: (instrument name, search term, instrument class, stop pips, tp pips, size multi)
     TICKER_MAP = {
-        "UKOIL": ("Oil - Brent Crude", "brent", "COMMODITIES", 1, 1, 1),
-        "CFDs on Brent Crude Oil": ("Oil - Brent Crude", "brent", "COMMODITIES", 1, 1, 1),
-        "DE30EUR": ("Germany 30 Cash", "dax", "INDICES", 1, 1, 1),
-        "DAX": ("Germany 30 Cash", "dax", "INDICES", 1, 1, 1),
-        "WHTUSD": ("Chicago Wheat", "chicago%20wheat", "COMMODITIES", 0, 0, 1),
-        "WHEATUSD": ("Chicago Wheat", "chicago%20wheat", "COMMODITIES", 0, 0, 1)}
+        "UKOIL": ("Oil - Brent Crude", "brent", "COMMODITIES", 1),
+        "CFDs on Brent Crude Oil": ("Oil - Brent Crude", "brent", "COMMODITIES", 1),
+        "DE30EUR": ("Germany 30 Cash", "dax", "INDICES", 1),
+        "DAX": ("Germany 30 Cash", "dax", "INDICES", 1),
+        "WHTUSD": ("Chicago Wheat", "chicago%20wheat", "COMMODITIES", 1),
+        "WHEATUSD": ("Chicago Wheat", "chicago%20wheat", "COMMODITIES", 1)}
 
     # Load webhook token. Incoming signals must match token to be actioned.
     if os.environ['WEBHOOK_TOKEN']:
@@ -97,8 +98,12 @@ def lambda_handler(event, context):
             "identifier": IG_USERNAME,
             "password": IG_PASSWORD}
 
-        response = s.send( Request('POST', IG_URL + "/session", json=body, headers=headers,
-                    params='').prepare())
+        # Initiate and reload the session as sometimes first session fails.
+        response = s.send(Request('POST', IG_URL + "/session", json=body, headers=headers,
+                          params='').prepare())
+        sleep(3)
+        response = s.send(Request('POST', IG_URL + "/session", json=body, headers=headers,
+                          params='').prepare())
 
         # CST and X-SECURITY-TOKEN must be included in subsequent requests.
         CST, XST = response.headers['CST'], response.headers['X-SECURITY-TOKEN']
@@ -119,9 +124,7 @@ def lambda_handler(event, context):
             name = TICKER_MAP[webhook_signal['ticker'].upper()][0]
             search = TICKER_MAP[webhook_signal['ticker'].upper()][1]
             iclass = TICKER_MAP[webhook_signal['ticker'].upper()][2]
-            stop_pips = TICKER_MAP[webhook_signal['ticker']][3] if TICKER_MAP[webhook_signal['ticker']][3] else None
-            tp_pips = TICKER_MAP[webhook_signal['ticker']][4] if TICKER_MAP[webhook_signal['ticker']][4] else None
-            size_multi = TICKER_MAP[webhook_signal['ticker']][5]
+            size_multi = TICKER_MAP[webhook_signal['ticker']][3]
 
             # Check for open positions.
             existing_positions = s.send(Request('GET', IG_URL + "/positions", headers=headers, params='').prepare()).json()
@@ -135,9 +138,8 @@ def lambda_handler(event, context):
                         epic = pos['market']["epic"]
                         expiry = pos['market']["expiry"]
 
-                        # Store the open position data.
+                        # Store open position data.
                         position = pos
-                        sys.exit(0)
 
             # Otherwise identify appropriate instrument.
             else:
@@ -162,34 +164,50 @@ def lambda_handler(event, context):
                 'body': json.dumps("Webhook ticker code not recognised.")}
 
         side = webhook_signal['side'].upper()
+        position_size = size_multi * minsize
 
-        # Now that we have the instrument, and the status of any open positions,
-        # handle actions per ticker.
+        # Handle unique trade rules per ticker.
+        if name == "Chicago Wheat":
+            sl, tp = None, None
 
-        # For new trades:
-        # Use best current bid and offer to calculate stop and tp level price.
+            # Prepare closure order.
+            if position:
+                close_side = "BUY" if position['position']['direction'] == "SELL" else "SELL"
+                body = {
+                    "dealId": position['position']['dealId'],
+                    "epic": None,
+                    "expiry": expiry,
+                    "direction": close_side,
+                    "size": pos['position']['size'],
+                    "level": None,
+                    "orderType": "MARKET",
+                    "timeInForce": None,
+                    "quoteId": None}
 
-        # Percentage based:
-        # if side == "BUY" or side == "SELL":
-        #     if side == "BUY":
-        #         stop = (idetails['snapshot']['bid'] / 100) * (100 - stop_level)
-        #         tp = (idetails['snapshot']['offer'] / 100) * (100 + tp_level)
-        #     elif side == "SELL":
-        #         stop = (idetails['snapshot']['offer'] / 100) * (100 + tp_level)
-        #         tp = (idetails['snapshot']['bid'] / 100) * (100 - stop_level)
+                # Attempt to close the existing position.
+                r = s.send(Request("DELETE", IG_URL + "/positions/otc", headers=headers, json=body, params='').prepare())
+                ref = r.json()
+                if r.status_code == 200:
 
-        # Pip based:
-        if side == "BUY" or side == "SELL":
-            if side == "BUY":
-                stop = int(idetails['snapshot']['bid'] - stop_pips) if stop_pips else None
-                tp = int(idetails['snapshot']['offer'] + tp_pips) if tp_pips else None
-            elif side == "SELL":
-                stop = int(idetails['snapshot']['offer'] + tp_pips) if tp_pips else None
-                tp = int(idetails['snapshot']['bid'] - stop_pips) if stop_pips else None
+                    # Check if position was closed.
+                    c = s.send(Request('GET', IG_URL + "/confirms/" + ref['dealReference'], headers=headers, params='').prepare())
+                    conf = c.json()
 
-            position_size = size_multi * minsize
+                    # Handle error cases.
+                    if conf['dealStatus'] == "REJECTED":
+                        if conf['reason'] == "MARKET_OFFLINE":
+                            print("Market offline.")
+                            return {
+                                'statusCode': 400,
+                                'body': json.dumps("Market offline.")}
 
-            # Specify position details.
+                else:
+                    print("Position closure failure.")
+                    return {
+                        'statusCode': r.status_code,
+                        'body': json.dumps("Order placement failure.")}
+
+            # Prepare new position order.
             order = {
                 "epic": epic,
                 "expiry": expiry,
@@ -199,50 +217,152 @@ def lambda_handler(event, context):
                 # "timeInForce": None,
                 "level": None,
                 "guaranteedStop": False,
-                "stopLevel": stop,
+                "stopLevel": sl,
                 "stopDistance": None,
                 # "trailingStop": False,
                 # "trailingStopIncrement": None,
-                "forceOpen": "true",
+                "forceOpen": True,
                 "limitLevel": tp,
                 "limitDistance": None,
                 "quoteId": None,
                 "currencyCode": currencies[0]
             }
 
-            print(webhook_signal['ticker'].upper(), name, "Expiry:", expiry, psize,
-                  currencies, "Min. deal size:", minsize, "Deal unit:", unit)
-
-            # Attempt to open a position.
+            # Attempt to open a new position.
             r = s.send(Request('POST', IG_URL + "/positions/otc", headers=headers, json=order, params='').prepare())
-            pos_r = r.json()
-
+            ref = r.json()
             if r.status_code == 200:
-                # Check if a new position was opened.
 
-                success_msg = "Deal ref#: " + pos_r['dealReference']
-                return {
-                    'statusCode': 200,
-                    'body': json.dumps(success_msg)}
+                # Check if new position was opened.
+                c = s.send(Request('GET', IG_URL + "/confirms/" + ref['dealReference'], headers=headers, params='').prepare())
+                conf = c.json()
+
+                # Handle error cases.
+                if conf['dealStatus'] == "REJECTED":
+                    if conf['reason'] == "MARKET_OFFLINE":
+                        print("Market offline.")
+                        return {
+                            'statusCode': 400,
+                            'body': json.dumps("Market offline.")}
+
             else:
                 print("Order placement failure.")
                 return {
                     'statusCode': r.status_code,
                     'body': json.dumps("Order placement failure.")}
 
-        # For close signals:
-        elif side == "CLOSE_LONG" or side == "CLOSE_SHORT":
+        elif name == "Germany 30 Cash":
 
-            # Get open positions.
+            sl_long, sl_short = 255, 220
+            tp = None
 
-            # If any exist, close them.
-            pass
+            # Signal side must be "BUY" "SELL" "CLOSE_BUY" "CLOSE_SELL"
+
+            # Open a new long or short.
+            if side == "BUY" or side == "SELL":
+
+                sl = sl_long if side == "BUY" else sl_short
+
+                # Prepare new position order.
+                order = {
+                    "epic": epic,
+                    "expiry": expiry,
+                    "direction": side,
+                    "size": position_size,
+                    "orderType": "MARKET",
+                    # "timeInForce": None,
+                    "level": None,
+                    "guaranteedStop": False,
+                    "stopLevel": sl,
+                    "stopDistance": None,
+                    # "trailingStop": False,
+                    # "trailingStopIncrement": None,
+                    "forceOpen": True,
+                    "limitLevel": tp,
+                    "limitDistance": None,
+                    "quoteId": None,
+                    "currencyCode": currencies[0]
+                }
+
+                # Attempt to open a new position.
+                r = s.send(Request('POST', IG_URL + "/positions/otc", headers=headers, json=order, params='').prepare())
+                ref = r.json()
+                if r.status_code == 200:
+
+                    # Check if new position was opened.
+                    c = s.send(Request('GET', IG_URL + "/confirms/" + ref['dealReference'], headers=headers, params='').prepare())
+                    conf = c.json()
+
+                    # Handle error cases.
+                    if conf['dealStatus'] == "REJECTED":
+                        if conf['reason'] == "MARKET_OFFLINE":
+                            print("Market offline.")
+                            return {
+                                'statusCode': 400,
+                                'body': json.dumps("Market offline.")}
+
+            # Close the existing long or short.
+            elif side == "CLOSE_BUY" or side == "CLOSE_SELL":
+
+                # Prepare closure order.
+                if position:
+                    close_side = "BUY" if side == "SELL" else "SELL"
+                    body = {
+                        "dealId": position['position']['dealId'],
+                        "epic": None,
+                        "expiry": expiry,
+                        "direction": close_side,
+                        "size": pos['position']['size'],
+                        "level": None,
+                        "orderType": "MARKET",
+                        "timeInForce": None,
+                        "quoteId": None}
+
+                    # Attempt to close the existing position.
+                    r = s.send(Request("DELETE", IG_URL + "/positions/otc", headers=headers, json=body, params='').prepare())
+                    ref = r.json()
+                    if r.status_code == 200:
+
+                        # Check if position was closed.
+                        c = s.send(Request('GET', IG_URL + "/confirms/" + ref['dealReference'], headers=headers, params='').prepare())
+                        conf = c.json()
+
+                        # Handle error cases.
+                        if conf['dealStatus'] == "REJECTED":
+                            if conf['reason'] == "MARKET_OFFLINE":
+                                print("Market offline.")
+                                return {
+                                    'statusCode': 400,
+                                    'body': json.dumps("Market offline.")}
+                else:
+                    print("No existing position.")
+                    return {
+                        'statusCode': 400,
+                        'body': json.dumps("No existing position.")}
+
+
+
+
+            else:
+                print("Webhook signal side error")
+                return {
+                    'statusCode': 400,
+                    'body': json.dumps("Webhook signal side error")}
+
+        elif name == "Oil - Brent Crude":
+
+            sl, tp = 150, 35
+            # Open positon with linked sl and tp using best bid and offer, then
+            # get confirmed entry level and adjust sl and tp to new values.
 
         else:
-            print("Error: Side value incorrect")
+            print("Error: Instrument not recognised.")
             return {
                 'statusCode': 400,
-                'body': json.dumps(side)}
+                'body': json.dumps("Instrument name not recognised.")}
+
+        # print(webhook_signal['ticker'].upper(), name, "Expiry:", expiry, psize,
+        #       currencies, "Min. deal size:", minsize, "Deal unit:", unit)
 
     else:
         print("Webhook signal token error")
@@ -251,7 +371,7 @@ def lambda_handler(event, context):
             'body': json.dumps("Webhook signal token error")}
 
 
-event = {"body": '{"ticker": "WHEATUSD", "exchange": "TVC", "side": "sell", "open": 42.42, "close": 42.57, "high": 42.68, "low": 42.34, "volume": 806, "time": "2019-08-27T09:56:00Z", "text": "", "token": "7f3c4d9a-9ac3-4819-b997-b8ee294d5a42"}'}
+event = {"body": '{"ticker": "DAX", "exchange": "TVC", "side": "close_sell", "open": 42.42, "close": 42.57, "high": 42.68, "low": 42.34, "volume": 806, "time": "2019-08-27T09:56:00Z", "text": "", "token": "7f3c4d9a-9ac3-4819-b997-b8ee294d5a42"}'}
 
 
 # Paste into webhook:
@@ -260,8 +380,3 @@ event = {"body": '{"ticker": "WHEATUSD", "exchange": "TVC", "side": "sell", "ope
 
 # print(json.dumps(event, indent=2))
 print(lambda_handler(event, context=None))
-
-
-# UKOIL - 210m
-# WHEATUSD - 120m
-# DE30EUR - 60m
