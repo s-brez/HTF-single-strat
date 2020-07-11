@@ -47,79 +47,80 @@ def lambda_handler(event, context):
     # Parse incoming webhook signal.
     webhook_signal = json.loads(event['body'])
 
-    # Action the signal if webhook token matches stored token.
+    # Action signal only if webhook token matches stored token.
     if webhook_signal['token'] == WEBHOOK_TOKEN:
 
-        # Load IG auth tokens from environment variables.
-        if LIVE:
-            if(  # Live.
-                os.environ['IG_API_KEY_LIVE'] and os.environ['IG_USERNAME_LIVE'] and
-                    os.environ['IG_PASSWORD_LIVE']):
-                IG_API_KEY = os.environ['IG_API_KEY_LIVE']
-                IG_USERNAME = os.environ['IG_USERNAME_LIVE']
-                IG_PASSWORD = os.environ['IG_PASSWORD_LIVE']
-                IG_URL = "https://api.ig.com/gateway/deal"
-            else:
-                print("Error: IG Markets live authentication tokens missing")
-                return {
-                    'statusCode': 400,
-                    'body': json.dumps(
-                        "IG Markets live authentication tokens missing")}
-        else:
-            if(  # Demo.
-                os.environ['IG_API_KEY_DEMO'] and os.environ['IG_USERNAME_DEMO'] and
-                    os.environ['IG_PASSWORD_DEMO']):
-                IG_API_KEY = os.environ['IG_API_KEY_DEMO']
-                IG_USERNAME = os.environ['IG_USERNAME_DEMO']
-                IG_PASSWORD = os.environ['IG_PASSWORD_DEMO']
-                IG_URL = "https://demo-api.ig.com/gateway/deal"
-            else:
-                print("Error: IG Markets demo authentication tokens missing")
-                return {
-                    'statusCode': 400,
-                    'body': json.dumps(
-                        "IG Markets demo authentication tokens missing")}
-
-        # Create a session with IG.
-        retries = Retry(
-            total=5,
-            backoff_factor=0.25,
-            status_forcelist=[502, 503, 504],
-            method_whitelist=False)
-        s = Session()
-        s.mount('https://', HTTPAdapter(max_retries=retries))
-
-        headers = {
-            'X-IG-API-KEY': IG_API_KEY,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json; charset=UTF-8'}
-
-        body = {
-            "identifier": IG_USERNAME,
-            "password": IG_PASSWORD}
-
-        # Initiate and reload the session as sometimes first session fails.
-        response = s.send(Request('POST', IG_URL + "/session", json=body, headers=headers,
-                          params='').prepare())
-        sleep(3)
-        response = s.send(Request('POST', IG_URL + "/session", json=body, headers=headers,
-                          params='').prepare())
-
-        # CST and X-SECURITY-TOKEN must be included in subsequent requests.
-        CST, XST = response.headers['CST'], response.headers['X-SECURITY-TOKEN']
-
-        # Prepare headers for new requests.
-        headers = {
-            'X-IG-API-KEY': IG_API_KEY,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json; charset=UTF-8',
-            'X-SECURITY-TOKEN': XST,
-            'CST': CST}
-
-        position, name, search, iclass, idetails, epic, expiry, psize, minsize, currencies, unit = None, None, None, None, None, None, None, None, None, None, None
-
-        # Action the signal only if the ticker code is known.
+        # Action signal only if ticker code is known.
         if webhook_signal['ticker'].upper() in TICKER_MAP.keys():
+
+            # Load IG auth tokens from environment variables.
+            if LIVE:
+                if(  # Live.
+                    os.environ['IG_API_KEY_LIVE'] and os.environ['IG_USERNAME_LIVE'] and
+                        os.environ['IG_PASSWORD_LIVE']):
+                    IG_API_KEY = os.environ['IG_API_KEY_LIVE']
+                    IG_USERNAME = os.environ['IG_USERNAME_LIVE']
+                    IG_PASSWORD = os.environ['IG_PASSWORD_LIVE']
+                    IG_URL = "https://api.ig.com/gateway/deal"
+                else:
+                    print("Error: IG Markets live authentication tokens missing")
+                    return {
+                        'statusCode': 400,
+                        'body': json.dumps(
+                            "IG Markets live authentication tokens missing")}
+            else:
+                if(  # Demo.
+                    os.environ['IG_API_KEY_DEMO'] and os.environ['IG_USERNAME_DEMO'] and
+                        os.environ['IG_PASSWORD_DEMO']):
+                    IG_API_KEY = os.environ['IG_API_KEY_DEMO']
+                    IG_USERNAME = os.environ['IG_USERNAME_DEMO']
+                    IG_PASSWORD = os.environ['IG_PASSWORD_DEMO']
+                    IG_URL = "https://demo-api.ig.com/gateway/deal"
+                else:
+                    print("Error: IG Markets demo authentication tokens missing")
+                    return {
+                        'statusCode': 400,
+                        'body': json.dumps(
+                            "IG Markets demo authentication tokens missing")}
+
+            # Create a session with IG.
+            retries = Retry(
+                total=5,
+                backoff_factor=0.25,
+                status_forcelist=[502, 503, 504],
+                method_whitelist=False)
+            s = Session()
+            s.mount('https://', HTTPAdapter(max_retries=retries))
+
+            headers = {
+                'X-IG-API-KEY': IG_API_KEY,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json; charset=UTF-8'}
+
+            body = {
+                "identifier": IG_USERNAME,
+                "password": IG_PASSWORD}
+
+            # Initiate and reload the session as sometimes first session fails.
+            response = s.send(Request('POST', IG_URL + "/session", json=body, headers=headers,
+                              params='').prepare())
+            sleep(3)
+            response = s.send(Request('POST', IG_URL + "/session", json=body, headers=headers,
+                              params='').prepare())
+
+            # CST and X-SECURITY-TOKEN must be included in subsequent requests.
+            CST, XST = response.headers['CST'], response.headers['X-SECURITY-TOKEN']
+
+            # Prepare headers for new requests.
+            headers = {
+                'X-IG-API-KEY': IG_API_KEY,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json; charset=UTF-8',
+                'X-SECURITY-TOKEN': XST,
+                'CST': CST}
+
+            position, name, search, iclass, idetails, epic, expiry, psize, minsize, currencies, unit = None, None, None, None, None, None, None, None, None, None, None
+
 
             name = TICKER_MAP[webhook_signal['ticker'].upper()][0]
             search = TICKER_MAP[webhook_signal['ticker'].upper()][1]
