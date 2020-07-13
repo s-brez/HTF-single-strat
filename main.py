@@ -104,7 +104,7 @@ def lambda_handler(event, context):
             # Initiate and reload the session as sometimes first session fails.
             response = s.send(Request('POST', IG_URL + "/session", json=body, headers=headers,
                               params='').prepare())
-            sleep(3)
+            sleep(1)
             response = s.send(Request('POST', IG_URL + "/session", json=body, headers=headers,
                               params='').prepare())
 
@@ -179,14 +179,16 @@ def lambda_handler(event, context):
                     "epic": None,
                     "expiry": expiry,
                     "direction": close_side,
-                    "size": pos['position']['size'],
+                    "size": pos['position']['dealSize'],
                     "level": None,
                     "orderType": "MARKET",
                     "timeInForce": None,
                     "quoteId": None}
 
                 # Attempt to close the existing position.
-                r = s.send(Request("DELETE", IG_URL + "/positions/otc", headers=headers, json=body, params='').prepare())
+                headers['_method'] = "DELETE"
+                r = s.send(Request("POST", IG_URL + "/positions/otc", headers=headers, json=body, params='').prepare())
+                del headers['_method']
                 ref = r.json()
                 if r.status_code == 200:
 
@@ -253,6 +255,21 @@ def lambda_handler(event, context):
                         return {
                             'statusCode': 400,
                             'body': json.dumps(conf)}
+
+                # Return 200 on success.
+                elif conf['dealStatus'] == "ACCEPTED":
+                    success_string = name + " position opened successfully."
+                    print(success_string)
+                    return {
+                        'statusCode': 200,
+                        'body': json.dumps(success_string)}
+
+                # Log other cases.
+                else:
+                    print(conf)
+                    return {
+                        'statusCode': 400,
+                        'body': json.dumps(conf)}
             else:
                 print("Order placement failure.")
                 return {
@@ -261,7 +278,7 @@ def lambda_handler(event, context):
 
         elif name == "Germany 30 Cash":
 
-            sl_long, sl_short = 255, 220
+            sl_long, sl_short, adjust = 255, 220, 0.5
             tp = None
 
             # Signal side must be "BUY" "SELL" "CLOSE_BUY" "CLOSE_SELL"
@@ -269,7 +286,7 @@ def lambda_handler(event, context):
             # Open a new long or short.
             if side == "BUY" or side == "SELL":
 
-                sl = sl_long if side == "BUY" else sl_short
+                sl = idetails['snapshot']['offer'] - sl_long if side == "BUY" else idetails['snapshot']['bid'] + sl_short
 
                 # Prepare new position order.
                 order = {
@@ -286,53 +303,82 @@ def lambda_handler(event, context):
                     # "trailingStop": False,
                     # "trailingStopIncrement": None,
                     "forceOpen": True,
-                    "limitLevel": tp,
+                    "limitLevel": None,
                     "limitDistance": None,
                     "quoteId": None,
                     "currencyCode": currencies[0]
                 }
 
                 # Attempt to open a new position.
-                r = s.send(Request('POST', IG_URL + "/positions/otc", headers=headers, json=order, params='').prepare())
-                ref = r.json()
-                if r.status_code == 200:
+                if position is None:
+                    r = s.send(Request('POST', IG_URL + "/positions/otc", headers=headers, json=order, params='').prepare())
+                    ref = r.json()
+                    if r.status_code == 200:
 
-                    # Check if new position was opened.
-                    c = s.send(Request('GET', IG_URL + "/confirms/" + ref['dealReference'], headers=headers, params='').prepare())
-                    conf = c.json()
+                        # Check if new position was opened.
+                        c = s.send(Request('GET', IG_URL + "/confirms/" + ref['dealReference'], headers=headers, params='').prepare())
+                        conf = c.json()
 
-                    # Handle error cases.
-                    if conf['dealStatus'] == "REJECTED":
-                        if conf['reason'] == "MARKET_OFFLINE" or conf['reason'] == "MARKET_CLOSED_WITH_EDITS":
-                            print("Market offline.")
+                        # Handle error cases.
+                        if conf['dealStatus'] == "REJECTED":
+                            if conf['reason'] == "MARKET_OFFLINE" or conf['reason'] == "MARKET_CLOSED_WITH_EDITS":
+                                print("Market offline.")
+                                return {
+                                    'statusCode': 400,
+                                    'body': json.dumps("Market offline.")}
+                            else:
+                                return {
+                                    'statusCode': 400,
+                                    'body': json.dumps(conf)}
+
+                        # Return 200 on success.
+                        elif conf['dealStatus'] == "ACCEPTED":
+                            success_string = name + " position opened successfully."
+                            print(success_string)
                             return {
-                                'statusCode': 400,
-                                'body': json.dumps("Market offline.")}
+                                'statusCode': 200,
+                                'body': json.dumps(success_string)}
+
+                        # Log other cases.
                         else:
+                            print(conf)
                             return {
                                 'statusCode': 400,
                                 'body': json.dumps(conf)}
 
+                elif position:
+                    msg_string = name + " already positioned."
+                    print(msg_string)
+                    return {
+                        'statusCode': 400,
+                        'body': json.dumps(msg_string)}
+
             # Close the existing long or short.
-            elif side == "CLOSE_BUY" or side == "CLOSE_SELL":
+            elif side.upper() == "CLOSE_BUY" or side.upper() == "CLOSE_SELL":
 
                 # Prepare closure order.
                 if position:
-                    close_side = "BUY" if side == "SELL" else "SELL"
+                    close_side = "BUY" if side.upper() == "CLOSE_SELL" else "SELL"
                     body = {
                         "dealId": position['position']['dealId'],
                         "epic": None,
                         "expiry": expiry,
                         "direction": close_side,
-                        "size": pos['position']['size'],
+                        "size": pos['position']['dealSize'],
                         "level": None,
                         "orderType": "MARKET",
                         "timeInForce": None,
                         "quoteId": None}
 
-                    # Attempt to close the existing position.
-                    r = s.send(Request("DELETE", IG_URL + "/positions/otc", headers=headers, json=body, params='').prepare())
+                    # Add new method header for position closures
+                    headers['_method'] = "DELETE"
+                    r = s.send(Request("POST", IG_URL + "/positions/otc", headers=headers, json=body, params='').prepare())
+                    del headers['_method']
                     ref = r.json()
+
+                    print(json.dumps(body, indent=2))
+                    print(json.dumps(ref, indent=2))
+
                     if r.status_code == 200:
 
                         # Check if position was closed.
@@ -350,6 +396,22 @@ def lambda_handler(event, context):
                                 return {
                                     'statusCode': 400,
                                     'body': json.dumps(conf)}
+
+                        # Return 200 on success.
+                        elif conf['dealStatus'] == "ACCEPTED":
+                            success_string = name + " position closed successfully."
+                            print(success_string)
+                            return {
+                                'statusCode': 200,
+                                'body': json.dumps(success_string)}
+
+                        # Log other cases.
+                        else:
+                            print(conf)
+                            return {
+                                'statusCode': 400,
+                                'body': json.dumps(conf)}
+
                 else:
                     print("No existing position.")
                     return {
@@ -364,16 +426,17 @@ def lambda_handler(event, context):
 
         elif name == "Oil - Brent Crude":
 
-            sl_pips, tp_pips = 150, 35
+            sl_pips, tp_pips, adjust = 150, 35, 2.8
 
             # Open positon with linked sl and tp using best bid and offer, then
             # get confirmed entry level and adjust sl and tp to new values.
+
             if side == "BUY":
-                stop = idetails['snapshot']['bid'] - sl_pips
+                stop = idetails['snapshot']['bid'] - sl_pips + adjust
                 tp = idetails['snapshot']['offer'] + tp_pips
             elif side == "SELL":
-                stop = idetails['snapshot']['offer'] + tp_pips
-                tp = idetails['snapshot']['bid'] - sl_pips
+                stop = idetails['snapshot']['offer'] + sl_pips + adjust
+                tp = idetails['snapshot']['bid'] - tp_pips
             else:
                 print("Webhook signal side error")
                 return {
@@ -418,9 +481,25 @@ def lambda_handler(event, context):
                             'statusCode': 400,
                             'body': json.dumps("Market offline.")}
                     else:
+                        print(conf)
                         return {
                             'statusCode': 400,
                             'body': json.dumps(conf)}
+
+                # Return 200 on success.
+                elif conf['dealStatus'] == "ACCEPTED":
+                    success_string = name + " position opened successfully."
+                    print(success_string)
+                    return {
+                        'statusCode': 200,
+                        'body': json.dumps(success_string)}
+
+                # Log other cases.
+                else:
+                    print(conf)
+                    return {
+                        'statusCode': 400,
+                        'body': json.dumps(conf)}
 
                 # TODO
                 # Adjust tp and stop to be fixed pips from entry.
@@ -438,7 +517,7 @@ def lambda_handler(event, context):
             'body': json.dumps("Webhook signal token error")}
 
 
-event = {"body": '{"ticker": "UKOIL", "exchange": "TVC", "side": "sell", "open": 42.42, "close": 42.57, "high": 42.68, "low": 42.34, "volume": 806, "time": "2019-08-27T09:56:00Z", "text": "", "token": "7f3c4d9a-9ac3-4819-b997-b8ee294d5a42"}'}
+event = {"body": '{"ticker": "WHEATUSD", "exchange": "TVC", "side": "buy", "open": 42.42, "close": 42.57, "high": 42.68, "low": 42.34, "volume": 806, "time": "2019-08-27T09:56:00Z", "text": "", "token": "7f3c4d9a-9ac3-4819-b997-b8ee294d5a42"}'}
 
 
 # Paste into webhook:
