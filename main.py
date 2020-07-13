@@ -13,14 +13,6 @@ def lambda_handler(event, context):
     Setup:
     Copy run() function body into AWS lambda and set required enviroment vars.
     Ensure the incoming signal parameter is JSON format or otherwise parsable.
-
-    Event flow:
-    1. Signal received from TradingView alert webhook.
-    2. Check signal token is valid, otherwise do nothing further.
-    3. Load relevant auth tokens from environment variables.
-    4. Parse incoming signal and calculate entry/stop/TP order size.
-    5. Raise orders with venue.
-
     """
 
     # Set True for live trading, false for demo acount.
@@ -121,7 +113,6 @@ def lambda_handler(event, context):
 
             position, name, search, iclass, idetails, epic, expiry, psize, minsize, currencies, unit = None, None, None, None, None, None, None, None, None, None, None
 
-
             name = TICKER_MAP[webhook_signal['ticker'].upper()][0]
             search = TICKER_MAP[webhook_signal['ticker'].upper()][1]
             iclass = TICKER_MAP[webhook_signal['ticker'].upper()][2]
@@ -169,7 +160,8 @@ def lambda_handler(event, context):
 
         # Handle unique trade rules per ticker.
         if name == "Chicago Wheat":
-            sl, tp = None, None
+
+            sl_both = 20
 
             # Prepare closure order.
             if position:
@@ -213,6 +205,9 @@ def lambda_handler(event, context):
                     return {
                         'statusCode': r.status_code,
                         'body': json.dumps("Order placement failure.")}
+
+            sl = idetails['snapshot']['offer'] - sl_both if side == "BUY" else idetails['snapshot']['bid'] + sl_both
+            tp = None
 
             # Prepare new position order.
             order = {
@@ -278,15 +273,17 @@ def lambda_handler(event, context):
 
         elif name == "Germany 30 Cash":
 
-            sl_long, sl_short, adjust = 255, 220, 0.5
-            tp = None
+            sl_long, sl_short, adjust = 150, 150, 0.5
+            tp_both = 50
 
             # Signal side must be "BUY" "SELL" "CLOSE_BUY" "CLOSE_SELL"
 
             # Open a new long or short.
             if side == "BUY" or side == "SELL":
 
+                # sl = idetails['snapshot']['offer'] - sl_long if side == "BUY" else idetails['snapshot']['bid'] + sl_short
                 sl = idetails['snapshot']['offer'] - sl_long if side == "BUY" else idetails['snapshot']['bid'] + sl_short
+                tp = idetails['snapshot']['bid'] + tp_both if side == "BUY" else idetails['snapshot']['offer'] - tp_both
 
                 # Prepare new position order.
                 order = {
@@ -435,7 +432,7 @@ def lambda_handler(event, context):
                 stop = idetails['snapshot']['bid'] - sl_pips + adjust
                 tp = idetails['snapshot']['offer'] + tp_pips
             elif side == "SELL":
-                stop = idetails['snapshot']['offer'] + sl_pips + adjust
+                stop = idetails['snapshot']['offer'] + sl_pips - adjust
                 tp = idetails['snapshot']['bid'] - tp_pips
             else:
                 print("Webhook signal side error")
