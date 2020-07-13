@@ -18,7 +18,7 @@ def lambda_handler(event, context):
     # Set True for live trading, false for demo acount.
     LIVE = False
 
-    # ticker_code: (instrument name, search term, instrument class, stop pips, tp pips, size multi)
+    # ticker_code: (instrument name, search term, instrument class, size multi)
     TICKER_MAP = {
         "UKOIL": ("Oil - Brent Crude", "brent", "COMMODITIES", 1),
         "CFDs on Brent Crude Oil": ("Oil - Brent Crude", "brent", "COMMODITIES", 1),
@@ -273,7 +273,7 @@ def lambda_handler(event, context):
 
         elif name == "Germany 30 Cash":
 
-            sl_long, sl_short, adjust = 150, 150, 0.5
+            sl_long, sl_short, adjust = 150, 150, 0
             tp_both = 50
 
             # Signal side must be "BUY" "SELL" "CLOSE_BUY" "CLOSE_SELL"
@@ -282,8 +282,8 @@ def lambda_handler(event, context):
             if side == "BUY" or side == "SELL":
 
                 # sl = idetails['snapshot']['offer'] - sl_long if side == "BUY" else idetails['snapshot']['bid'] + sl_short
-                sl = idetails['snapshot']['offer'] - sl_long if side == "BUY" else idetails['snapshot']['bid'] + sl_short
-                tp = idetails['snapshot']['bid'] + tp_both if side == "BUY" else idetails['snapshot']['offer'] - tp_both
+                sl = idetails['snapshot']['bid'] - sl_long + adjust if side == "BUY" else idetails['snapshot']['offer'] + sl_short - adjust
+                tp = idetails['snapshot']['offer'] + tp_both if side == "BUY" else idetails['snapshot']['bid'] - tp_both
 
                 # Prepare new position order.
                 order = {
@@ -300,7 +300,7 @@ def lambda_handler(event, context):
                     # "trailingStop": False,
                     # "trailingStopIncrement": None,
                     "forceOpen": True,
-                    "limitLevel": None,
+                    "limitLevel": tp,
                     "limitDistance": None,
                     "quoteId": None,
                     "currencyCode": currencies[0]
@@ -514,7 +514,7 @@ def lambda_handler(event, context):
             'body': json.dumps("Webhook signal token error")}
 
 
-event = {"body": '{"ticker": "WHEATUSD", "exchange": "TVC", "side": "buy", "open": 42.42, "close": 42.57, "high": 42.68, "low": 42.34, "volume": 806, "time": "2019-08-27T09:56:00Z", "text": "", "token": "7f3c4d9a-9ac3-4819-b997-b8ee294d5a42"}'}
+event = {"body": '{"ticker": "DAX", "exchange": "TVC", "side": "buy", "open": 42.42, "close": 42.57, "high": 42.68, "low": 42.34, "volume": 806, "time": "2019-08-27T09:56:00Z", "text": "", "token": "7f3c4d9a-9ac3-4819-b997-b8ee294d5a42"}'}
 
 
 # Paste into webhook:
