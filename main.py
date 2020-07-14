@@ -120,6 +120,7 @@ def lambda_handler(event, context):
 
             # Check for open positions.
             existing_positions = s.send(Request('GET', IG_URL + "/positions", headers=headers, params='').prepare()).json()
+            find_instrument = True
 
             # If open position exists matching ticker code, use that EPIC and expiry.
             if len(existing_positions['positions']) > 0:
@@ -132,9 +133,10 @@ def lambda_handler(event, context):
 
                         # Store open position data.
                         position = pos
+                        find_instrument = False
 
             # Otherwise identify appropriate instrument.
-            else:
+            if find_instrument:
                 # Find appropriate instrument to match given webhook ticker code.
                 markets = s.send(Request('GET', IG_URL + "/markets?searchTerm=" + search, headers=headers, params='').prepare())
                 for market in markets.json()['markets']:
@@ -273,7 +275,7 @@ def lambda_handler(event, context):
 
         elif name == "Germany 30 Cash":
 
-            sl_long, sl_short, adjust = 150, 150, 0
+            sl_long, sl_short, adjust = 150, 150, 4
             tp_both = 50
 
             # Signal side must be "BUY" "SELL" "CLOSE_BUY" "CLOSE_SELL"
@@ -282,8 +284,12 @@ def lambda_handler(event, context):
             if side == "BUY" or side == "SELL":
 
                 # sl = idetails['snapshot']['offer'] - sl_long if side == "BUY" else idetails['snapshot']['bid'] + sl_short
-                sl = idetails['snapshot']['bid'] - sl_long + adjust if side == "BUY" else idetails['snapshot']['offer'] + sl_short - adjust
-                tp = idetails['snapshot']['offer'] + tp_both if side == "BUY" else idetails['snapshot']['bid'] - tp_both
+                if side == "BUY":
+                    stop = idetails['snapshot']['bid'] - sl_short + adjust
+                    tp = idetails['snapshot']['offer'] + tp_both
+                elif side == "SELL":
+                    stop = idetails['snapshot']['offer'] + sl_short - adjust
+                    tp = idetails['snapshot']['bid'] - tp_both
 
                 # Prepare new position order.
                 order = {
@@ -295,7 +301,7 @@ def lambda_handler(event, context):
                     # "timeInForce": None,
                     "level": None,
                     "guaranteedStop": False,
-                    "stopLevel": sl,
+                    "stopLevel": stop,
                     "stopDistance": None,
                     # "trailingStop": False,
                     # "trailingStopIncrement": None,
@@ -514,7 +520,7 @@ def lambda_handler(event, context):
             'body': json.dumps("Webhook signal token error")}
 
 
-event = {"body": '{"ticker": "DAX", "exchange": "TVC", "side": "buy", "open": 42.42, "close": 42.57, "high": 42.68, "low": 42.34, "volume": 806, "time": "2019-08-27T09:56:00Z", "text": "", "token": "7f3c4d9a-9ac3-4819-b997-b8ee294d5a42"}'}
+event = {"body": '{"ticker": "DAX", "exchange": "TVC", "side": "sell", "open": 42.42, "close": 42.57, "high": 42.68, "low": 42.34, "volume": 806, "time": "2019-08-27T09:56:00Z", "text": "", "token": "7f3c4d9a-9ac3-4819-b997-b8ee294d5a42"}'}
 
 
 # Paste into webhook:
