@@ -18,8 +18,8 @@ def lambda_handler(event, context):
         "CFDs on Brent Crude Oil": ("Oil - Brent Crude", "brent", "COMMODITIES", 1),
         "DE30EUR": ("Germany 30", "dax", "INDICES", 1),
         "DAX": ("Germany 30", "dax", "INDICES", 1),
-        "WHTUSD": ("Chicago Wheat", "chicago%20wheat", "COMMODITIES", 1),
-        "WHEATUSD": ("Chicago Wheat", "chicago%20wheat", "COMMODITIES", 1)}
+        "WHTUSD": ("Chicago Wheat", "chicago%20wheat", "COMMODITIES", 15),
+        "WHEATUSD": ("Chicago Wheat", "chicago%20wheat", "COMMODITIES", 15)}
 
     # Load webhook token. Incoming signals must match token to be actioned.
     if os.environ['WEBHOOK_TOKEN']:
@@ -155,9 +155,12 @@ def lambda_handler(event, context):
                 'body': json.dumps("Webhook ticker code not recognised.")}
 
         side = webhook_signal['side'].upper()
+
         position_size = size_multi * minsize
 
-        # Handle unique trade rules per ticker.
+        ###########################
+        # START WHEATUSD HANDLING #
+        ###########################
         if name == "Chicago Wheat":
 
             sl_both = 20
@@ -226,7 +229,7 @@ def lambda_handler(event, context):
                 "limitLevel": tp,
                 "limitDistance": None,
                 "quoteId": None,
-                "currencyCode": currencies[0]
+                "currencyCode": "GBP"
             }
 
             # Attempt to open a new position.
@@ -270,6 +273,9 @@ def lambda_handler(event, context):
                     'statusCode': r.status_code,
                     'body': json.dumps("Order placement failure.")}
 
+        ######################
+        # START DAX HANDLING #
+        ######################
         elif name == "Germany 30":
 
             sl_long, sl_short, adjust = 150, 150, 4
@@ -421,6 +427,9 @@ def lambda_handler(event, context):
                     'statusCode': 400,
                     'body': json.dumps("Webhook signal side error")}
 
+        ########################
+        # START UKOIL HANDLING #
+        ########################
         elif name == "Oil - Brent Crude":
 
             sl_pips, tp_pips, adjust = 150, 35, 2.8

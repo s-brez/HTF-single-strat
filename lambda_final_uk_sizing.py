@@ -24,8 +24,8 @@ def lambda_handler(event, context):
         "CFDs on Brent Crude Oil": ("Oil - Brent Crude", "brent", "COMMODITIES", 1),
         "DE30EUR": ("Germany 30", "dax", "INDICES", 1),
         "DAX": ("Germany 30", "dax", "INDICES", 1),
-        "WHTUSD": ("Chicago Wheat", "chicago%20wheat", "COMMODITIES", 1),
-        "WHEATUSD": ("Chicago Wheat", "chicago%20wheat", "COMMODITIES", 1)}
+        "WHTUSD": ("Chicago Wheat", "chicago%20wheat", "COMMODITIES", 15),
+        "WHEATUSD": ("Chicago Wheat", "chicago%20wheat", "COMMODITIES", 15)}
 
     # Load webhook token. Incoming signals must match token to be actioned.
     if os.environ['WEBHOOK_TOKEN']:
@@ -155,10 +155,8 @@ def lambda_handler(event, context):
             unit = idetails['dealingRules']['minDealSize']['unit']
 
             # Debug use only.
-            # for i in [position, name, search, iclass, idetails, epic, expiry, psize, minsize, currencies, unit]:
-            #     print(json.dumps(i, indent=2))
-
-            # sys.exit(0)
+            for i in [position, name, search, iclass, idetails, epic, expiry, psize, minsize, currencies, unit]:
+                print(json.dumps(i, indent=2))
 
         else:
             print("Error: Webhook ticker code not recognised.")
@@ -238,7 +236,7 @@ def lambda_handler(event, context):
                 "limitLevel": tp,
                 "limitDistance": None,
                 "quoteId": None,
-                "currencyCode": currencies[0]
+                "currencyCode": "GBP"
             }
 
             # Attempt to open a new position.
@@ -523,7 +521,7 @@ def lambda_handler(event, context):
             'body': json.dumps("Webhook signal token error")}
 
 
-event = {"body": '{"ticker": "DAX", "exchange": "TVC", "side": "close_buy", "open": 42.42, "close": 42.57, "high": 42.68, "low": 42.34, "volume": 806, "time": "2019-08-27T09:56:00Z", "text": "", "token": "7f3c4d9a-9ac3-4819-b997-b8ee294d5a42"}'}
+event = {"body": '{"ticker": "WHEATUSD", "exchange": "TVC", "side": "sell", "open": 42.42, "close": 42.57, "high": 42.68, "low": 42.34, "volume": 806, "time": "2019-08-27T09:56:00Z", "text": "", "token": "7f3c4d9a-9ac3-4819-b997-b8ee294d5a42"}'}
 
 
 # Paste into webhook:
