@@ -432,80 +432,88 @@ def lambda_handler(event, context):
         ########################
         elif name == "Oil - Brent Crude":
 
-            sl_pips, tp_pips, adjust = 150, 35, 2.8
+            if not position:
+                sl_pips, tp_pips, adjust = 150, 35, 2.8
 
-            # Open positon with linked sl and tp using best bid and offer, then
-            # get confirmed entry level and adjust sl and tp to new values.
+                # Open positon with linked sl and tp using best bid and offer, then
+                # get confirmed entry level and adjust sl and tp to new values.
 
-            if side == "BUY":
-                stop = idetails['snapshot']['bid'] - sl_pips + adjust
-                tp = idetails['snapshot']['offer'] + tp_pips
-            elif side == "SELL":
-                stop = idetails['snapshot']['offer'] + sl_pips - adjust
-                tp = idetails['snapshot']['bid'] - tp_pips
-            else:
-                print("Webhook signal side error")
-                return {
-                    'statusCode': 400,
-                    'body': json.dumps("Webhook signal side error")}
+                if side == "BUY":
+                    stop = idetails['snapshot']['bid'] - sl_pips + adjust
+                    tp = idetails['snapshot']['offer'] + tp_pips
+                elif side == "SELL":
+                    stop = idetails['snapshot']['offer'] + sl_pips - adjust
+                    tp = idetails['snapshot']['bid'] - tp_pips
+                else:
+                    print("Webhook signal side error")
+                    return {
+                        'statusCode': 400,
+                        'body': json.dumps("Webhook signal side error")}
 
-            # Prepare new position order.
-            order = {
-                "epic": epic,
-                "expiry": expiry,
-                "direction": side,
-                "size": position_size,
-                "orderType": "MARKET",
-                # "timeInForce": None,
-                "level": None,
-                "guaranteedStop": False,
-                "stopLevel": stop,
-                "stopDistance": None,
-                # "trailingStop": False,
-                # "trailingStopIncrement": None,
-                "forceOpen": True,
-                "limitLevel": tp,
-                "limitDistance": None,
-                "quoteId": None,
-                "currencyCode": currencies[0]
-            }
+                # Prepare new position order.
+                order = {
+                    "epic": epic,
+                    "expiry": expiry,
+                    "direction": side,
+                    "size": position_size,
+                    "orderType": "MARKET",
+                    # "timeInForce": None,
+                    "level": None,
+                    "guaranteedStop": False,
+                    "stopLevel": stop,
+                    "stopDistance": None,
+                    # "trailingStop": False,
+                    # "trailingStopIncrement": None,
+                    "forceOpen": True,
+                    "limitLevel": tp,
+                    "limitDistance": None,
+                    "quoteId": None,
+                    "currencyCode": currencies[0]
+                }
 
-            # Attempt to open a new position.
-            r = s.send(requests.Request('POST', IG_URL + "/positions/otc", headers=headers, json=order, params='').prepare())
-            ref = r.json()
-            if r.status_code == 200:
+                # Attempt to open a new position.
+                r = s.send(requests.Request('POST', IG_URL + "/positions/otc", headers=headers, json=order, params='').prepare())
+                ref = r.json()
+                if r.status_code == 200:
 
-                # Check if new position was opened.
-                c = s.send(requests.Request('GET', IG_URL + "/confirms/" + ref['dealReference'], headers=headers, params='').prepare())
-                conf = c.json()
+                    # Check if new position was opened.
+                    c = s.send(requests.Request('GET', IG_URL + "/confirms/" + ref['dealReference'], headers=headers, params='').prepare())
+                    conf = c.json()
 
-                # Handle error cases.
-                if conf['dealStatus'] == "REJECTED":
-                    if conf['reason'] == "MARKET_OFFLINE" or conf['reason'] == "MARKET_CLOSED_WITH_EDITS":
-                        print("Market offline.")
+                    # Handle error cases.
+                    if conf['dealStatus'] == "REJECTED":
+                        if conf['reason'] == "MARKET_OFFLINE" or conf['reason'] == "MARKET_CLOSED_WITH_EDITS":
+                            print("Market offline.")
+                            return {
+                                'statusCode': 400,
+                                'body': json.dumps("Market offline.")}
+                        else:
+                            print(conf)
+                            return {
+                                'statusCode': 400,
+                                'body': json.dumps(conf)}
+
+                    # Return 200 on success.
+                    elif conf['dealStatus'] == "ACCEPTED":
+                        success_string = name + " position opened successfully."
+                        print(success_string)
                         return {
-                            'statusCode': 400,
-                            'body': json.dumps("Market offline.")}
+                            'statusCode': 200,
+                            'body': json.dumps(success_string)}
+
+                    # Log other cases.
                     else:
                         print(conf)
                         return {
                             'statusCode': 400,
                             'body': json.dumps(conf)}
 
-                # Return 200 on success.
-                elif conf['dealStatus'] == "ACCEPTED":
-                    success_string = name + " position opened successfully."
-                    print(success_string)
-                    return {
-                        'statusCode': 200,
-                        'body': json.dumps(success_string)}
-
-                # Log other cases.
-                else:
-                    print(conf)
-                    return {
-                        'statusCode': 400,
-                        'body': json.dumps(conf)}
+            else:
+                repsonse_string = name + " position already open."
+                print(response_string)
+                return {
+                    'statusCode': 400,
+                    'body': json.dumps(response_string)}
 
         else:
             print("Error: Instrument name not recognised.")
