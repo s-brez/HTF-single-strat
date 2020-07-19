@@ -167,46 +167,49 @@ def lambda_handler(event, context):
             closed = False
 
             if position:
-                close_side = "BUY" if position['position']['direction'] == "SELL" else "SELL"
-                body = {
-                    "dealId": position['position']['dealId'],
-                    "epic": None,
-                    "expiry": expiry,
-                    "direction": close_side,
-                    "size": pos['position']['dealSize'],
-                    "level": None,
-                    "orderType": "MARKET",
-                    "timeInForce": None,
-                    "quoteId": None}
 
-                # Attempt to close the existing position.
-                headers['_method'] = "DELETE"
-                r = s.send(Request("POST", IG_URL + "/positions/otc", headers=headers, json=body, params='').prepare())
-                del headers['_method']
-                ref = r.json()
-                if r.status_code == 200:
+                # Filter non-sequential signals
+                if position['position']['direction'] == "BUY" and side == "SELL" or position['position']['direction'] == "SELL" and side == "BUY":
+                    close_side = "BUY" if position['position']['direction'] == "SELL" else "SELL"
+                    body = {
+                        "dealId": position['position']['dealId'],
+                        "epic": None,
+                        "expiry": expiry,
+                        "direction": close_side,
+                        "size": pos['position']['dealSize'],
+                        "level": None,
+                        "orderType": "MARKET",
+                        "timeInForce": None,
+                        "quoteId": None}
 
-                    # Check if position was closed.
-                    c = s.send(Request('GET', IG_URL + "/confirms/" + ref['dealReference'], headers=headers, params='').prepare())
-                    conf = c.json()
-                    closed = True if conf['dealStatus'] == "ACCEPTED" else False
+                    # Attempt to close the existing position.
+                    headers['_method'] = "DELETE"
+                    r = s.send(Request("POST", IG_URL + "/positions/otc", headers=headers, json=body, params='').prepare())
+                    del headers['_method']
+                    ref = r.json()
+                    if r.status_code == 200:
 
-                    # Handle error cases.
-                    if conf['dealStatus'] == "REJECTED":
-                        if conf['reason'] == "MARKET_OFFLINE" or conf['reason'] == "MARKET_CLOSED_WITH_EDITS":
-                            print("Market offline.")
-                            return {
-                                'statusCode': 400,
-                                'body': json.dumps("Market offline.")}
-                        else:
-                            return {
-                                'statusCode': 400,
-                                'body': json.dumps(conf)}
-                else:
-                    print("Position closure failure.")
-                    return {
-                        'statusCode': r.status_code,
-                        'body': json.dumps("Order placement failure.")}
+                        # Check if position was closed.
+                        c = s.send(Request('GET', IG_URL + "/confirms/" + ref['dealReference'], headers=headers, params='').prepare())
+                        conf = c.json()
+                        closed = True if conf['dealStatus'] == "ACCEPTED" else False
+
+                        # Handle error cases.
+                        if conf['dealStatus'] == "REJECTED":
+                            if conf['reason'] == "MARKET_OFFLINE" or conf['reason'] == "MARKET_CLOSED_WITH_EDITS":
+                                print("Market offline.")
+                                return {
+                                    'statusCode': 400,
+                                    'body': json.dumps("Market offline.")}
+                            else:
+                                return {
+                                    'statusCode': 400,
+                                    'body': json.dumps(conf)}
+                    else:
+                        print("Position closure failure.")
+                        return {
+                            'statusCode': r.status_code,
+                            'body': json.dumps("Order placement failure.")}
 
             if not position or closed:
                 sl = idetails['snapshot']['offer'] - sl_both if side == "BUY" else idetails['snapshot']['bid'] + sl_both
