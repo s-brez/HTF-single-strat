@@ -184,13 +184,13 @@ def lambda_handler(event, context):
 
                     # Attempt to close the existing position.
                     headers['_method'] = "DELETE"
-                    r = s.send(Request("POST", IG_URL + "/positions/otc", headers=headers, json=body, params='').prepare())
+                    r = s.send(requests.Request("POST", IG_URL + "/positions/otc", headers=headers, json=body, params='').prepare())
                     del headers['_method']
                     ref = r.json()
                     if r.status_code == 200:
 
                         # Check if position was closed.
-                        c = s.send(Request('GET', IG_URL + "/confirms/" + ref['dealReference'], headers=headers, params='').prepare())
+                        c = s.send(requests.Request('GET', IG_URL + "/confirms/" + ref['dealReference'], headers=headers, params='').prepare())
                         conf = c.json()
                         closed = True if conf['dealStatus'] == "ACCEPTED" else False
 
@@ -237,12 +237,12 @@ def lambda_handler(event, context):
                 }
 
                 # Attempt to open a new position.
-                r = s.send(Request('POST', IG_URL + "/positions/otc", headers=headers, json=order, params='').prepare())
+                r = s.send(requests.Request('POST', IG_URL + "/positions/otc", headers=headers, json=order, params='').prepare())
                 ref = r.json()
                 if r.status_code == 200:
 
                     # Check if new position was opened.
-                    c = s.send(Request('GET', IG_URL + "/confirms/" + ref['dealReference'], headers=headers, params='').prepare())
+                    c = s.send(requests.Request('GET', IG_URL + "/confirms/" + ref['dealReference'], headers=headers, params='').prepare())
                     conf = c.json()
 
                     # Handle error cases.
