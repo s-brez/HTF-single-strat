@@ -284,7 +284,7 @@ def lambda_handler(event, context):
                         'statusCode': r.status_code,
                         'body': json.dumps("Order placement failure.")}
             else:
-                msg_string = name + " failed to close existing position."
+                msg_string = name + " position already open, or failed to close existing position."
                 print(msg_string)
                 return {
                     'statusCode': 400,
