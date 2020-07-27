@@ -167,6 +167,11 @@ def lambda_handler(event, context):
             closed = False
 
             if position:
+                print("WHEAT has an existing", position['position']['direction'], "of size", position['position']['dealSize'])
+            else:
+                print("No position for wheat.")
+
+            if position:
 
                 # Filter non-sequential signals
                 if position['position']['direction'] == "BUY" and side == "SELL" or position['position']['direction'] == "SELL" and side == "BUY":
@@ -176,7 +181,8 @@ def lambda_handler(event, context):
                         "epic": None,
                         "expiry": expiry,
                         "direction": close_side,
-                        "size": pos['position']['dealSize'],
+                        # "size": pos['position']['dealSize'],
+                        "size": size_multi,
                         "level": None,
                         "orderType": "MARKET",
                         "timeInForce": None,
@@ -259,7 +265,7 @@ def lambda_handler(event, context):
 
                     # Return 200 on success.
                     elif conf['dealStatus'] == "ACCEPTED":
-                        success_string = name + " position opened successfully."
+                        success_string = name + " " + side + " position opened successfully."
                         print(success_string)
                         return {
                             'statusCode': 200,
@@ -277,7 +283,7 @@ def lambda_handler(event, context):
                         'statusCode': r.status_code,
                         'body': json.dumps("Order placement failure.")}
             else:
-                msg_string = name + " position already open, or failed to close existing position."
+                msg_string = name + " " + position['position']['direction'] + " position already open, or failed to close existing position."
                 print(msg_string)
                 return {
                     'statusCode': 400,
@@ -288,8 +294,8 @@ def lambda_handler(event, context):
         ######################
         elif name == "Germany 30":
 
-            sl_long, sl_short, adjust = 150, 150, 4
-            tp_both = 50
+            sl_long, sl_short, adjust = 255, 255, 4
+            tp_both = 40
 
             # Signal side must be "BUY" "SELL" "CLOSE_BUY" "CLOSE_SELL"
 

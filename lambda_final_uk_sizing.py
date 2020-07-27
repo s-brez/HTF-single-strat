@@ -127,7 +127,7 @@ def lambda_handler(event, context):
                 for pos in existing_positions['positions']:
                     if name in pos['market']['instrumentName'][:len(name)]:
                         print("Open position exists for " + name + ".")
-                        print(json.dumps(pos, indent=2))
+                        # print(json.dumps(pos, indent=2))
                         epic = pos['market']["epic"]
                         expiry = pos['market']["expiry"]
 
@@ -173,6 +173,17 @@ def lambda_handler(event, context):
             sl_both = 20
             closed = False
 
+            # for p in existing_positions['positions']:
+            #     print(json.dumps(p, indent=2))
+
+            if position:
+                print("WHEAT has an existing", position['position']['direction'], "of size", position['position']['dealSize'])
+            else:
+                print("No position for wheat.")
+
+            # print("Exiting.")
+            # sys.exit(0)
+
             if position:
 
                 # Filter non-sequential signals
@@ -183,7 +194,8 @@ def lambda_handler(event, context):
                         "epic": None,
                         "expiry": expiry,
                         "direction": close_side,
-                        "size": pos['position']['dealSize'],
+                        # "size": pos['position']['dealSize'],
+                        "size": size_multi,
                         "level": None,
                         "orderType": "MARKET",
                         "timeInForce": None,
@@ -266,7 +278,7 @@ def lambda_handler(event, context):
 
                     # Return 200 on success.
                     elif conf['dealStatus'] == "ACCEPTED":
-                        success_string = name + " position opened successfully."
+                        success_string = name + " " + side + " position opened successfully."
                         print(success_string)
                         return {
                             'statusCode': 200,
@@ -284,7 +296,7 @@ def lambda_handler(event, context):
                         'statusCode': r.status_code,
                         'body': json.dumps("Order placement failure.")}
             else:
-                msg_string = name + " position already open, or failed to close existing position."
+                msg_string = name + " " + position['position']['direction'] + " position already open, or failed to close existing position."
                 print(msg_string)
                 return {
                     'statusCode': 400,
@@ -539,7 +551,7 @@ def lambda_handler(event, context):
             'body': json.dumps("Webhook signal token error")}
 
 
-event = {"body": '{"ticker": "WHEATUSD", "exchange": "TVC", "side": "buy", "open": 42.42, "close": 42.57, "high": 42.68, "low": 42.34, "volume": 806, "time": "2019-08-27T09:56:00Z", "text": "", "token": "7f3c4d9a-9ac3-4819-b997-b8ee294d5a42"}'}
+event = {"body": '{"ticker": "WHEATUSD", "exchange": "TVC", "side": "sell", "open": 42.42, "close": 42.57, "high": 42.68, "low": 42.34, "volume": 806, "time": "2019-08-27T09:56:00Z", "text": "", "token": "7f3c4d9a-9ac3-4819-b997-b8ee294d5a42"}'}
 
 
 # Paste into webhook:
