@@ -36,8 +36,12 @@ def lambda_handler(event, context):
             'statusCode': 400,
             'body': json.dumps("Tradingview webhook token missing")}
 
-    # Parse incoming webhook signal.
-    webhook_signal = json.loads(event['body'])
+    try:
+        # Parse incoming webhook signal.
+        webhook_signal = json.loads(event['body'])
+    except Exception as e:
+        print("Event body type",  type(event['body']), "str:", event['body'])
+        sys.exit(0)
 
     # Action signal only if webhook token matches stored token.
     if webhook_signal['token'] == WEBHOOK_TOKEN:
