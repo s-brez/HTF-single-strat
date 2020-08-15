@@ -12,6 +12,7 @@ def lambda_handler(event, context):
     # Set True for live trading, false for demo acount.
     LIVE = False
 
+    # 1
     # ticker_code: (instrument name, search term, instrument class, size multi)
     TICKER_MAP = {
         "UKOIL": ("Oil - Brent Crude", "brent", "COMMODITIES", 1),
@@ -21,6 +22,7 @@ def lambda_handler(event, context):
         "WHTUSD": ("Chicago Wheat", "chicago%20wheat", "COMMODITIES", 15),
         "WHEATUSD": ("Chicago Wheat", "chicago%20wheat", "COMMODITIES", 15)}
 
+    # 2
     # Load webhook token. Incoming signals must match token to be actioned.
     if os.environ['WEBHOOK_TOKEN']:
         WEBHOOK_TOKEN = os.environ['WEBHOOK_TOKEN']
@@ -30,6 +32,7 @@ def lambda_handler(event, context):
             'statusCode': 400,
             'body': json.dumps("Tradingview webhook token missing")}
 
+    # 3
     try:
         # Parse incoming webhook signal.
         webhook_signal = json.loads(event['body'])
@@ -43,6 +46,7 @@ def lambda_handler(event, context):
         # Action signal only if ticker code is known.
         if webhook_signal['ticker'].upper() in TICKER_MAP.keys():
 
+            # 4
             # Load IG auth tokens from environment variables.
             if LIVE:
                 if(  # Live.
@@ -73,6 +77,7 @@ def lambda_handler(event, context):
                         'body': json.dumps(
                             "IG Markets demo authentication tokens missing")}
 
+            # 5
             # Create a session with IG.
             retries = urllib3.util.retry.Retry(
                 total=5,
@@ -109,6 +114,7 @@ def lambda_handler(event, context):
                 'X-SECURITY-TOKEN': XST,
                 'CST': CST}
 
+            # 6
             position, name, search, iclass, idetails, epic, expiry, psize, minsize, currencies, unit = None, None, None, None, None, None, None, None, None, None, None
 
             name = TICKER_MAP[webhook_signal['ticker'].upper()][0]
@@ -161,6 +167,8 @@ def lambda_handler(event, context):
         side = webhook_signal['side'].upper()
 
         position_size = size_multi * minsize
+
+        # 7
 
         ###########################
         # START WHEATUSD HANDLING #
