@@ -543,7 +543,7 @@ def lambda_handler(event, context):
                     "stopLevel": sl,
                     "stopDistance": None,
                     "trailingStop": True,
-                    # "trailingStopIncrement": None,
+                    "trailingStopIncrement": sl_trail_step,
                     "forceOpen": True,
                     "limitLevel": tp,
                     "limitDistance": None,
