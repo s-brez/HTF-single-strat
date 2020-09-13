@@ -1,0 +1,24 @@
+UKOIL:
+SL: 150 pips @  £1/pip
+TP: 35 pips
+Assumed only one trade happens at a time, program will simply open a position and place SL/TP when a signal is received.
+
+WHEAT:
+SL: 20 pips @ £15/pip
+TP: None or manual
+"buy" or "sell" webhook signal will close any existing opposite-direction position, then open a new position in the direction of signal.
+Assumed trades are sequential, e.g. there shouldn't be two consecutive longs. 
+ 
+DAX:
+SL: 150 pips @  £1/pip
+TP: 50 pips 
+"buy" or "sell" webhook signal will open a long or short, if there's not an existing position.
+"close_buy" or "close_sell" webhook signal will close a long or short position.
+
+
+oil base margin is £424.6, needs to be scaled to £426.94
+
+wheat base margin is £52, needs to be scaled to £799.04
+
+dax base margin is £629.3, needs to be scaled to £637.53 
+
