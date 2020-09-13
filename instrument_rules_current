@@ -1,0 +1,18 @@
+UKOIL:
+SL: 150 pips @  £1/pip
+TP: 35 pips
+"buy" or "sell" webhook signal will close any existing opposite-direction position, then open a new position in the direction of signal.
+Assumed trades are sequential, e.g. there shouldn't be two consecutive longs. 
+
+WHEAT:
+SL: 20 pips @ £15/pip
+TP: None or manual
+"buy" or "sell" webhook signal will close any existing opposite-direction position, then open a new position in the direction of signal.
+Assumed trades are sequential, e.g. there shouldn't be two consecutive longs. 
+ 
+DAX:
+SL: 150 pips @  £1/pip
+TP: 50 pips 
+"buy" or "sell" webhook signal will open a long or short, if there's not an existing position.
+"close_buy" or "close_sell" webhook signal will close a long or short position.
+
