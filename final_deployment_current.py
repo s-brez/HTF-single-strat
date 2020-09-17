@@ -103,6 +103,9 @@ def lambda_handler(event, context):
             response = s.send(requests.Request('POST', IG_URL + "/session", json=body, headers=headers,
                               params='').prepare())
 
+            # Log the login response header
+            print(json.dumps(response.json(), indent=2))
+
             # CST and X-SECURITY-TOKEN must be included in subsequent requests.
             CST, XST = response.headers['CST'], response.headers['X-SECURITY-TOKEN']
 
@@ -540,8 +543,8 @@ def lambda_handler(event, context):
                     # "timeInForce": None,
                     "level": None,
                     "guaranteedStop": False,
-                    "stopLevel": sl,
-                    "stopDistance": None,
+                    "stopLevel": None,
+                    "stopDistance": sl_pips,
                     "trailingStop": True,
                     "trailingStopIncrement": sl_trail_step,
                     "forceOpen": True,
@@ -587,6 +590,7 @@ def lambda_handler(event, context):
                             'statusCode': 400,
                             'body': json.dumps(conf)}
                 else:
+                    print(json.dumps(order, indent=2))
                     print("Order placement failure.")
                     print(r.json())
                     return {
