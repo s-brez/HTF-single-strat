@@ -103,9 +103,6 @@ def lambda_handler(event, context):
             response = s.send(requests.Request('POST', IG_URL + "/session", json=body, headers=headers,
                               params='').prepare())
 
-            # Log the login response header
-            print(json.dumps(response.json(), indent=2))
-
             # CST and X-SECURITY-TOKEN must be included in subsequent requests.
             CST, XST = response.headers['CST'], response.headers['X-SECURITY-TOKEN']
 
@@ -116,6 +113,30 @@ def lambda_handler(event, context):
                 'Accept': 'application/json; charset=UTF-8',
                 'X-SECURITY-TOKEN': XST,
                 'CST': CST}
+
+            # Check if trailing stops are enabled for the account
+            response = s.send(requests.Request('GET', IG_URL + "/accounts/preferences", headers=headers,
+                              params='').prepare())
+
+            # Enable trailing stops if not enabled
+            if not response.json()["trailingStopsEnabled"]:
+                print("Trailing stops disabled. Attempting to enable.")
+                response = s.send(requests.Request('PUT', IG_URL + "/accounts/preferences",
+                                  json={"trailingStopsEnabled": True},
+                                  headers=headers,
+                                  params='').prepare())
+
+                # Verify it was actually enabled
+                response = s.send(requests.Request('GET', IG_URL + "/accounts/preferences", headers=headers,
+                                  params='').prepare())
+                if response.json()["trailingStopsEnabled"]:
+                    print("Trailing stops enabled")
+                else:
+                    return {
+                        'statusCode': 400,
+                        'body': json.dumps("Unable to enable trailing stops.")}
+            else:
+                print("Trailing stops already enabled.")
 
             # 6
             position, name, search, iclass, idetails, epic, expiry, psize, minsize, currencies, unit = None, None, None, None, None, None, None, None, None, None, None
@@ -541,16 +562,16 @@ def lambda_handler(event, context):
                     "size": position_size,
                     "orderType": "MARKET",
                     # "timeInForce": None,
-                    "level": None,
+                    # "level": None,
                     "guaranteedStop": False,
-                    "stopLevel": None,
+                    # "stopLevel": None,
                     "stopDistance": sl_pips,
                     "trailingStop": True,
                     "trailingStopIncrement": sl_trail_step,
                     "forceOpen": True,
                     "limitLevel": tp,
-                    "limitDistance": None,
-                    "quoteId": None,
+                    # "limitDistance": None,
+                    # "quoteId": None,
                     "currencyCode": "GBP"
                 }
 
