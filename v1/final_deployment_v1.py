@@ -537,7 +537,7 @@ def lambda_handler(event, context):
                             'body': json.dumps(conf)}
 
             else:
-                repsonse_string = name + " position already open."
+                response_string = name + " position already open."
                 print(response_string)
                 return {
                     'statusCode': 400,
