@@ -3,7 +3,7 @@ import json
 import os
 
 
-URL = "https://raz4jv8ir7.execute-api.us-east-1.amazonaws.com/default/1hr_strategy"
+URL = ""
 
 
 payload = {}
